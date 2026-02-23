@@ -4,9 +4,10 @@ const API_KEY = "aldin-local-key";
 const messagesEl = document.getElementById("messages");
 const formEl = document.getElementById("chat-form");
 const inputEl = document.getElementById("user-input");
-const avatarFace = document.getElementById("avatar-face");
-const avatarMouth = document.getElementById("avatar-mouth");
+
+const avatarWrapper = document.getElementById("avatar-wrapper");
 const avatarStatus = document.getElementById("avatar-status");
+const avatarVideo = document.getElementById("avatar-video");
 
 const wakeToggle = document.getElementById("wake-toggle");
 const voiceToggle = document.getElementById("voice-toggle");
@@ -25,6 +26,9 @@ let recognition = null;
 let listeningForWake = false;
 let speakingUtterance = null;
 
+/* ---------------------------
+   UI MESSAGE HANDLING
+----------------------------*/
 function addMessage(role, text) {
   const div = document.createElement("div");
   div.classList.add("message", role);
@@ -34,46 +38,60 @@ function addMessage(role, text) {
   return div;
 }
 
+/* ---------------------------
+   AVATAR STATE CONTROL
+----------------------------*/
 function setState(state) {
-  avatarFace.classList.remove("thinking", "speaking");
-  avatarMouth.classList.remove("speaking");
+  avatarWrapper.classList.remove("thinking", "speaking", "listening");
 
   if (state === "thinking") {
-    avatarFace.classList.add("thinking");
+    avatarWrapper.classList.add("thinking");
     avatarStatus.textContent = "Thinking...";
   } else if (state === "speaking") {
-    avatarFace.classList.add("speaking");
-    avatarMouth.classList.add("speaking");
+    avatarWrapper.classList.add("speaking");
     avatarStatus.textContent = "Responding...";
   } else if (state === "listening") {
+    avatarWrapper.classList.add("listening");
     avatarStatus.textContent = "Listening...";
   } else {
     avatarStatus.textContent = "Idle";
   }
 }
 
+/* ---------------------------
+   TEXT-TO-SPEECH
+----------------------------*/
 function speak(text) {
   if (!ttsEnabled || !window.speechSynthesis) return;
+
   if (speakingUtterance) {
     window.speechSynthesis.cancel();
   }
+
   const utter = new SpeechSynthesisUtterance(text);
   speakingUtterance = utter;
+
   utter.onstart = () => setState("speaking");
   utter.onend = () => {
     speakingUtterance = null;
     setTimeout(() => setState("idle"), 400);
   };
+
   window.speechSynthesis.speak(utter);
 }
 
+/* ---------------------------
+   TYPING EFFECT
+----------------------------*/
 function typeOutText(element, fullText, speed = 18) {
   element.textContent = "";
   let i = 0;
+
   const interval = setInterval(() => {
     element.textContent += fullText[i];
     i++;
     messagesEl.scrollTop = messagesEl.scrollHeight;
+
     if (i >= fullText.length) {
       clearInterval(interval);
       speak(fullText);
@@ -82,6 +100,9 @@ function typeOutText(element, fullText, speed = 18) {
   }, speed);
 }
 
+/* ---------------------------
+   SEND MESSAGE TO LLM
+----------------------------*/
 async function sendMessage(text) {
   const userMsg = { role: "user", content: text };
   conversation.push(userMsg);
@@ -132,6 +153,9 @@ async function sendMessage(text) {
   }
 }
 
+/* ---------------------------
+   CHAT FORM SUBMIT
+----------------------------*/
 formEl.addEventListener("submit", (e) => {
   e.preventDefault();
   const text = inputEl.value.trim();
@@ -140,19 +164,27 @@ formEl.addEventListener("submit", (e) => {
   sendMessage(text);
 });
 
+/* ---------------------------
+   TTS TOGGLE
+----------------------------*/
 ttsToggle.addEventListener("click", () => {
   ttsEnabled = !ttsEnabled;
   ttsToggle.classList.toggle("active", ttsEnabled);
   ttsToggle.textContent = ttsEnabled ? "Voice: On" : "Voice: Off";
+
   if (!ttsEnabled && window.speechSynthesis) {
     window.speechSynthesis.cancel();
   }
 });
 
+/* ---------------------------
+   SPEECH RECOGNITION
+----------------------------*/
 function initRecognition() {
   const SpeechRecognition =
     window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) return null;
+
   const rec = new SpeechRecognition();
   rec.lang = "en-US";
   rec.continuous = false;
@@ -167,11 +199,13 @@ voiceToggle.addEventListener("click", () => {
       alert("Speech recognition not supported in this browser.");
       return;
     }
+
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript.trim();
       addMessage("user", transcript);
       sendMessage(transcript);
     };
+
     recognition.onstart = () => setState("listening");
     recognition.onend = () => {
       if (!wakeEnabled) setState("idle");
@@ -181,6 +215,9 @@ voiceToggle.addEventListener("click", () => {
   recognition.start();
 });
 
+/* ---------------------------
+   WAKE WORD SYSTEM
+----------------------------*/
 wakeToggle.addEventListener("click", () => {
   wakeEnabled = !wakeEnabled;
   wakeToggle.classList.toggle("active", wakeEnabled);
@@ -208,24 +245,29 @@ wakeToggle.addEventListener("click", () => {
 
 function startWakeLoop() {
   if (!recognition) return;
+
   listeningForWake = true;
+
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript.toLowerCase();
+
     if (transcript.includes("aldin")) {
       setState("listening");
+
       recognition.onresult = (event2) => {
         const query = event2.results[0][0].transcript.trim();
         addMessage("user", query);
         sendMessage(query);
-        if (wakeEnabled) {
-          startWakeLoop();
-        }
+
+        if (wakeEnabled) startWakeLoop();
       };
+
       recognition.start();
     } else if (wakeEnabled) {
       startWakeLoop();
     }
   };
+
   recognition.onend = () => {
     if (wakeEnabled) {
       recognition.start();
@@ -234,5 +276,6 @@ function startWakeLoop() {
       setState("idle");
     }
   };
+
   recognition.start();
 }

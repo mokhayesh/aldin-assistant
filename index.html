@@ -13,22 +13,38 @@
       <div class="controls">
         <button id="wake-toggle" class="pill-btn">Wake: Off</button>
         <button id="voice-toggle" class="pill-btn">Mic</button>
-        <button id="tts-toggle" class="pill-btn">Voice: On</button>
+        <button id="tts-toggle" class="pill-btn active">Voice: On</button>
       </div>
     </header>
 
     <div class="main-layout">
-      <div class="avatar-panel">
-        <div class="avatar-face" id="avatar-face">
-          <div class="avatar-eyes">
-            <div class="eye"></div>
-            <div class="eye"></div>
-          </div>
-          <div class="avatar-mouth" id="avatar-mouth"></div>
-        </div>
-        <div class="avatar-status" id="avatar-status">Idle</div>
-      </div>
 
+      <!-- UPDATED AVATAR PANEL -->
+      <div class="avatar-panel">
+        <div class="avatar-container">
+          <div class="avatar-wrapper" id="avatar-wrapper">
+            <div class="avatar-ring"></div>
+
+            <!-- NEW: Holographic video avatar -->
+            <video
+              src="assistant-avatar.mp4"
+              autoplay
+              loop
+              muted
+              playsinline
+              class="avatar-video"
+              id="avatar-video"
+            ></video>
+
+            <div class="avatar-glow"></div>
+          </div>
+
+          <div class="avatar-status" id="avatar-status">Idle</div>
+        </div>
+      </div>
+      <!-- END UPDATED AVATAR PANEL -->
+
+      <!-- CHAT PANEL (unchanged) -->
       <div class="chat-container">
         <div class="messages" id="messages"></div>
         <form id="chat-form">
@@ -41,6 +57,7 @@
           <button type="submit">Send</button>
         </form>
       </div>
+
     </div>
   </div>
 
