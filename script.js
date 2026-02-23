@@ -1,0 +1,238 @@
+const API_URL = "http://10.0.0.108:8871/v1/chat/completions";
+const API_KEY = "aldin-local-key";
+
+const messagesEl = document.getElementById("messages");
+const formEl = document.getElementById("chat-form");
+const inputEl = document.getElementById("user-input");
+const avatarFace = document.getElementById("avatar-face");
+const avatarMouth = document.getElementById("avatar-mouth");
+const avatarStatus = document.getElementById("avatar-status");
+
+const wakeToggle = document.getElementById("wake-toggle");
+const voiceToggle = document.getElementById("voice-toggle");
+const ttsToggle = document.getElementById("tts-toggle");
+
+let conversation = [
+  {
+    role: "system",
+    content: "You are Aldin-Mini, a helpful, concise home AI assistant.",
+  },
+];
+
+let ttsEnabled = true;
+let wakeEnabled = false;
+let recognition = null;
+let listeningForWake = false;
+let speakingUtterance = null;
+
+function addMessage(role, text) {
+  const div = document.createElement("div");
+  div.classList.add("message", role);
+  div.textContent = text;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
+}
+
+function setState(state) {
+  avatarFace.classList.remove("thinking", "speaking");
+  avatarMouth.classList.remove("speaking");
+
+  if (state === "thinking") {
+    avatarFace.classList.add("thinking");
+    avatarStatus.textContent = "Thinking...";
+  } else if (state === "speaking") {
+    avatarFace.classList.add("speaking");
+    avatarMouth.classList.add("speaking");
+    avatarStatus.textContent = "Responding...";
+  } else if (state === "listening") {
+    avatarStatus.textContent = "Listening...";
+  } else {
+    avatarStatus.textContent = "Idle";
+  }
+}
+
+function speak(text) {
+  if (!ttsEnabled || !window.speechSynthesis) return;
+  if (speakingUtterance) {
+    window.speechSynthesis.cancel();
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  speakingUtterance = utter;
+  utter.onstart = () => setState("speaking");
+  utter.onend = () => {
+    speakingUtterance = null;
+    setTimeout(() => setState("idle"), 400);
+  };
+  window.speechSynthesis.speak(utter);
+}
+
+function typeOutText(element, fullText, speed = 18) {
+  element.textContent = "";
+  let i = 0;
+  const interval = setInterval(() => {
+    element.textContent += fullText[i];
+    i++;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (i >= fullText.length) {
+      clearInterval(interval);
+      speak(fullText);
+      setTimeout(() => setState("idle"), 400);
+    }
+  }, speed);
+}
+
+async function sendMessage(text) {
+  const userMsg = { role: "user", content: text };
+  conversation.push(userMsg);
+  addMessage("user", text);
+
+  setState("thinking");
+  inputEl.disabled = true;
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "aldin-mini",
+        messages: conversation,
+        temperature: 0.7,
+        max_tokens: 512,
+        top_p: 1,
+        n_predict: 256,
+        stream: false,
+        stop: null,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const assistantText =
+      data.choices?.[0]?.message?.content?.trim() || "[No response]";
+
+    conversation.push({ role: "assistant", content: assistantText });
+
+    setState("speaking");
+    const msgEl = addMessage("assistant", "");
+    typeOutText(msgEl, assistantText);
+  } catch (err) {
+    console.error(err);
+    addMessage("assistant", "There was an error talking to Aldin-Mini.");
+    setTimeout(() => setState("idle"), 800);
+  } finally {
+    inputEl.disabled = false;
+    inputEl.focus();
+  }
+}
+
+formEl.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const text = inputEl.value.trim();
+  if (!text) return;
+  inputEl.value = "";
+  sendMessage(text);
+});
+
+ttsToggle.addEventListener("click", () => {
+  ttsEnabled = !ttsEnabled;
+  ttsToggle.classList.toggle("active", ttsEnabled);
+  ttsToggle.textContent = ttsEnabled ? "Voice: On" : "Voice: Off";
+  if (!ttsEnabled && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
+  }
+});
+
+function initRecognition() {
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+  const rec = new SpeechRecognition();
+  rec.lang = "en-US";
+  rec.continuous = false;
+  rec.interimResults = false;
+  return rec;
+}
+
+voiceToggle.addEventListener("click", () => {
+  if (!recognition) {
+    recognition = initRecognition();
+    if (!recognition) {
+      alert("Speech recognition not supported in this browser.");
+      return;
+    }
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript.trim();
+      addMessage("user", transcript);
+      sendMessage(transcript);
+    };
+    recognition.onstart = () => setState("listening");
+    recognition.onend = () => {
+      if (!wakeEnabled) setState("idle");
+    };
+  }
+
+  recognition.start();
+});
+
+wakeToggle.addEventListener("click", () => {
+  wakeEnabled = !wakeEnabled;
+  wakeToggle.classList.toggle("active", wakeEnabled);
+  wakeToggle.textContent = wakeEnabled ? "Wake: On" : "Wake: Off";
+
+  if (!recognition) {
+    recognition = initRecognition();
+    if (!recognition) {
+      alert("Speech recognition not supported in this browser.");
+      wakeEnabled = false;
+      wakeToggle.classList.remove("active");
+      wakeToggle.textContent = "Wake: Off";
+      return;
+    }
+  }
+
+  if (wakeEnabled && !listeningForWake) {
+    startWakeLoop();
+  } else if (!wakeEnabled && listeningForWake) {
+    recognition.stop();
+    listeningForWake = false;
+    setState("idle");
+  }
+});
+
+function startWakeLoop() {
+  if (!recognition) return;
+  listeningForWake = true;
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.toLowerCase();
+    if (transcript.includes("aldin")) {
+      setState("listening");
+      recognition.onresult = (event2) => {
+        const query = event2.results[0][0].transcript.trim();
+        addMessage("user", query);
+        sendMessage(query);
+        if (wakeEnabled) {
+          startWakeLoop();
+        }
+      };
+      recognition.start();
+    } else if (wakeEnabled) {
+      startWakeLoop();
+    }
+  };
+  recognition.onend = () => {
+    if (wakeEnabled) {
+      recognition.start();
+    } else {
+      listeningForWake = false;
+      setState("idle");
+    }
+  };
+  recognition.start();
+}

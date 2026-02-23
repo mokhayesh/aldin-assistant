@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Aldin-Mini Avatar</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>Aldin-Mini</h1>
+      <div class="controls">
+        <button id="wake-toggle" class="pill-btn">Wake: Off</button>
+        <button id="voice-toggle" class="pill-btn">Mic</button>
+        <button id="tts-toggle" class="pill-btn">Voice: On</button>
+      </div>
+    </header>
+
+    <div class="main-layout">
+      <div class="avatar-panel">
+        <div class="avatar-face" id="avatar-face">
+          <div class="avatar-eyes">
+            <div class="eye"></div>
+            <div class="eye"></div>
+          </div>
+          <div class="avatar-mouth" id="avatar-mouth"></div>
+        </div>
+        <div class="avatar-status" id="avatar-status">Idle</div>
+      </div>
+
+      <div class="chat-container">
+        <div class="messages" id="messages"></div>
+        <form id="chat-form">
+          <input
+            type="text"
+            id="user-input"
+            placeholder="Talk to Aldin-Mini..."
+            autocomplete="off"
+          />
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
