@@ -26,6 +26,35 @@ let recognition = null;
 let listeningForWake = false;
 let speakingUtterance = null;
 
+/* ---------------------------------
+   LOAD VOICES
+----------------------------------*/
+speechSynthesis.onvoiceschanged = () => {};
+
+/* ---------------------------------
+   FEMININE FUTURISTIC VOICE PICKER
+----------------------------------*/
+function getFeminineFuturisticVoice() {
+  const voices = speechSynthesis.getVoices();
+
+  // Priority list of best feminine synthetic voices
+  const preferred = [
+    "Google US English",       // Chrome synthetic female
+    "Google English",          // fallback
+    "Microsoft Zira",          // Windows feminine voice
+    "English United States",   // generic female variants
+    "Female"                   // catch-all
+  ];
+
+  for (const name of preferred) {
+    const match = voices.find(v => v.name.includes(name));
+    if (match) return match;
+  }
+
+  // Fallback: any en-US voice
+  return voices.find(v => v.lang === "en-US") || voices[0] || null;
+}
+
 /* ---------------------------
    UI MESSAGE HANDLING
 ----------------------------*/
@@ -59,7 +88,7 @@ function setState(state) {
 }
 
 /* ---------------------------
-   TEXT-TO-SPEECH
+   TEXT-TO-SPEECH (FEMININE FUTURISTIC)
 ----------------------------*/
 function speak(text) {
   if (!ttsEnabled || !window.speechSynthesis) return;
@@ -69,9 +98,22 @@ function speak(text) {
   }
 
   const utter = new SpeechSynthesisUtterance(text);
+
+  // Load best feminine futuristic voice
+  const best = getFeminineFuturisticVoice();
+  if (best) utter.voice = best;
+
+  // Futuristic feminine tuning
+  utter.pitch = 1.15;   // slightly higher, feminine + synthetic
+  utter.rate = 1.02;    // smooth, calm pacing
+  utter.volume = 1.0;
+
   speakingUtterance = utter;
 
-  utter.onstart = () => setState("speaking");
+  utter.onstart = () => {
+    setState("speaking");
+  };
+
   utter.onend = () => {
     speakingUtterance = null;
     setTimeout(() => setState("idle"), 400);
