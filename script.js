@@ -1,5 +1,13 @@
-const API_URL = "http://10.0.0.108:8871/v1/chat/completions";
-const API_KEY = "aldin-local-key";
+// Prefer same-origin: serve this UI from the same host:port as llama.cpp.
+// Then these endpoints resolve correctly from any client on your network.
+const API_BASE = `${window.location.origin}/v1`;
+const API_URL = `${API_BASE}/chat/completions`;
+const MODELS_URL = `${API_BASE}/models`;
+
+// llama.cpp server key (matches --api_key)
+// Tip: set once in DevTools console: localStorage.setItem('aldin_api_key','aldin-local-key')
+const API_KEY = localStorage.getItem("aldin_api_key") || "aldin-local-key";
+const MODEL = localStorage.getItem("aldin_model") || "aldin-mini";
 
 const messagesEl = document.getElementById("messages");
 const formEl = document.getElementById("chat-form");
@@ -25,6 +33,83 @@ let wakeEnabled = false;
 let recognition = null;
 let listeningForWake = false;
 let speakingUtterance = null;
+
+// --- Futuristic voice layer (synthetic undertone) ---
+// SpeechSynthesis audio cannot be directly processed, so we layer a subtle synth texture
+// while the assistant is speaking (kept intentionally low-volume).
+let voxCtx = null;
+let voxOsc = null;
+let voxGain = null;
+let voxNoiseSrc = null;
+
+function startSynthVox() {
+  try {
+    if (!window.AudioContext && !window.webkitAudioContext) return;
+    if (!voxCtx) voxCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (voxCtx.state === "suspended") voxCtx.resume().catch(() => {});
+
+    voxOsc = voxCtx.createOscillator();
+    voxOsc.type = "sawtooth";
+    voxOsc.frequency.value = 118;
+
+    const bufferSize = 2 * voxCtx.sampleRate;
+    const noiseBuffer = voxCtx.createBuffer(1, bufferSize, voxCtx.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) output[i] = (Math.random() * 2 - 1) * 0.12;
+    voxNoiseSrc = voxCtx.createBufferSource();
+    voxNoiseSrc.buffer = noiseBuffer;
+    voxNoiseSrc.loop = true;
+
+    const noiseFilter = voxCtx.createBiquadFilter();
+    noiseFilter.type = "bandpass";
+    noiseFilter.frequency.value = 950;
+    noiseFilter.Q.value = 0.9;
+
+    voxGain = voxCtx.createGain();
+    voxGain.gain.value = 0.0;
+
+    const hp = voxCtx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 140;
+
+    voxOsc.connect(voxGain);
+    voxNoiseSrc.connect(noiseFilter);
+    noiseFilter.connect(voxGain);
+    voxGain.connect(hp);
+    hp.connect(voxCtx.destination);
+
+    const now = voxCtx.currentTime;
+    voxGain.gain.cancelScheduledValues(now);
+    voxGain.gain.setValueAtTime(0.0, now);
+    voxGain.gain.linearRampToValueAtTime(0.03, now + 0.08);
+
+    voxOsc.start();
+    voxNoiseSrc.start();
+  } catch {
+    // ignore
+  }
+}
+
+function stopSynthVox() {
+  try {
+    if (!voxCtx || !voxGain) return;
+    const now = voxCtx.currentTime;
+    voxGain.gain.cancelScheduledValues(now);
+    voxGain.gain.setValueAtTime(voxGain.gain.value, now);
+    voxGain.gain.linearRampToValueAtTime(0.0, now + 0.12);
+    setTimeout(() => {
+      try {
+        voxOsc?.stop();
+        voxNoiseSrc?.stop();
+      } catch {}
+      voxOsc = null;
+      voxNoiseSrc = null;
+      voxGain = null;
+    }, 200);
+  } catch {
+    // ignore
+  }
+}
 
 
 
@@ -84,10 +169,54 @@ function setState(state) {
   } else if (state === "listening") {
     avatarWrapper.classList.add("listening");
     avatarStatus.textContent = "Listening...";
+  } else if (state === "greeting") {
+    avatarStatus.textContent = "Hello";
   } else {
     avatarStatus.textContent = "Idle";
   }
+
+  // Video avatar state machine (3 mp4s): rest / greeting / response
+  const avatarVideo = document.getElementById("avatar-video");
+  if (avatarVideo) {
+    const restSrc = avatarVideo.dataset.restSrc || "assistant-avatar-rest.mp4";
+    const greetSrc = avatarVideo.dataset.greetingSrc || "assistant-avatar-greeting.mp4";
+    const respSrc = avatarVideo.dataset.responseSrc || "assistant-avatar-response.mp4";
+
+    let nextSrc = restSrc;
+    let loop = true;
+
+    if (state === "speaking") {
+      nextSrc = respSrc;
+      loop = true;
+    } else if (state === "greeting") {
+      nextSrc = greetSrc;
+      loop = false;
+    } else {
+      nextSrc = restSrc;
+      loop = true;
+    }
+
+    if (avatarVideo.getAttribute("src") !== nextSrc) {
+      avatarVideo.setAttribute("src", nextSrc);
+      avatarVideo.load();
+    }
+    avatarVideo.loop = loop;
+    avatarVideo.play().catch(() => {});
+
+    if (state === "greeting") {
+      const onEnded = () => {
+        avatarVideo.removeEventListener("ended", onEnded);
+        setState("idle");
+      };
+      avatarVideo.addEventListener("ended", onEnded);
+    }
+  }
 }
+
+// Play greeting once on first load
+window.addEventListener("load", () => {
+  setState("greeting");
+});
 
 /* ---------------------------
    TEXT-TO-SPEECH (FEMININE FUTURISTIC)
@@ -114,10 +243,12 @@ function speak(text) {
 
   utter.onstart = () => {
     setState("speaking");
+    startSynthVox();
   };
 
   utter.onend = () => {
     speakingUtterance = null;
+    stopSynthVox();
     setTimeout(() => setState("idle"), 400);
   };
 
@@ -163,7 +294,7 @@ async function sendMessage(text) {
         Authorization: `Bearer ${API_KEY}`,
       },
       body: JSON.stringify({
-        model: "aldin-mini",
+        model: MODEL,
         messages: conversation,
         temperature: 0.7,
         max_tokens: 512,
@@ -237,6 +368,14 @@ function initRecognition() {
 }
 
 voiceToggle.addEventListener("click", () => {
+  // User gesture: allow AudioContext to start later for the synthetic voice layer
+  try {
+    if (!voxCtx && (window.AudioContext || window.webkitAudioContext)) {
+      voxCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    voxCtx?.resume?.().catch(() => {});
+  } catch {}
+
   if (!recognition) {
     recognition = initRecognition();
     if (!recognition) {
@@ -250,8 +389,22 @@ voiceToggle.addEventListener("click", () => {
       sendMessage(transcript);
     };
 
-    recognition.onstart = () => setState("listening");
+    recognition.onstart = () => {
+      voiceToggle.classList.add("active");
+      setState("listening");
+    };
     recognition.onend = () => {
+      voiceToggle.classList.remove("active");
+      if (!wakeEnabled) setState("idle");
+    };
+
+    recognition.onerror = (event) => {
+      voiceToggle.classList.remove("active");
+      const msg =
+        `Mic error: ${event.error}. ` +
+        `If you're opening this from a different computer via http://10.x.x.x, Chrome may block speech recognition on insecure origins. ` +
+        `Fix options: (1) use https, (2) open via http://localhost on the same machine, or (3) enable chrome://flags/#unsafely-treat-insecure-origin-as-secure and add ${window.location.origin}.`;
+      addMessage("assistant", msg);
       if (!wakeEnabled) setState("idle");
     };
   }

@@ -13,38 +13,43 @@
       <div class="controls">
         <button id="wake-toggle" class="pill-btn">Wake: Off</button>
         <button id="voice-toggle" class="pill-btn">Mic</button>
-        <button id="tts-toggle" class="pill-btn active">Voice: On</button>
+        <button id="tts-toggle" class="pill-btn">Voice: On</button>
       </div>
     </header>
 
     <div class="main-layout">
-
-      <!-- UPDATED AVATAR PANEL -->
       <div class="avatar-panel">
-        <div class="avatar-container">
-          <div class="avatar-wrapper" id="avatar-wrapper">
-            <div class="avatar-ring"></div>
+        <div class="avatar-wrapper" id="avatar-wrapper" aria-label="Aldin-Mini avatar">
+          <div class="avatar-ring" aria-hidden="true"></div>
 
-            <!-- NEW: Holographic video avatar -->
-            <video
-              src="assistant-avatar.mp4"
-              autoplay
-              loop
-              muted
-              playsinline
-              class="avatar-video"
-              id="avatar-video"
-            ></video>
+          <!-- Avatar video states
+               NOTE: place these 3 mp4 files next to index.html (same folder), or rename the filenames below:
+                 - assistant-avatar-rest.mp4
+                 - assistant-avatar-greeting.mp4
+                 - assistant-avatar-response.mp4
+          -->
+          <video
+            id="avatar-video"
+            class="avatar-video"
+            autoplay
+            loop
+            muted
+            playsinline
+            preload="auto"
+            src="assistant-avatar-rest.mp4"
+            data-rest-src="assistant-avatar-rest.mp4"
+            data-greeting-src="assistant-avatar-greeting.mp4"
+            data-response-src="assistant-avatar-response.mp4"
+          ></video>
 
-            <div class="avatar-glow"></div>
-          </div>
-
-          <div class="avatar-status" id="avatar-status">Idle</div>
+          <div class="avatar-glow" aria-hidden="true"></div>
+          <div class="avatar-scanlines" aria-hidden="true"></div>
+          <div class="avatar-particles" aria-hidden="true"></div>
         </div>
-      </div>
-      <!-- END UPDATED AVATAR PANEL -->
 
-      <!-- CHAT PANEL -->
+        <div class="avatar-status" id="avatar-status">Idle</div>
+      </div>
+
       <div class="chat-container">
         <div class="messages" id="messages"></div>
         <form id="chat-form">
@@ -57,11 +62,9 @@
           <button type="submit">Send</button>
         </form>
       </div>
-
     </div>
   </div>
 
-  <!-- IMPORTANT: Cache-busted script so tablet loads the newest version -->
-  <script src="script.js?v=3"></script>
+  <script src="script.js"></script>
 </body>
 </html>
